@@ -1,0 +1,127 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Force SDK path in local.properties (CI only)
+        run: |
+          echo "sdk.dir=$HOME/.android-sdk" > android/local.properties
+
+      # Cache Gradle files
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-cache-${{ runner.os }}-
+
+      # Cache Android SDK licenses (important for SDK manager)
+      - name: Cache Android SDK licenses
+        uses: actions/cache@v3
+        with:
+          path: ~/.android
+          key: android-sdk-licenses-${{ runner.os }}-v1
+          restore-keys: android-sdk-licenses-${{ runner.os }}-
+
+      # Cache Android SDK (platforms, build-tools, emulator, ndk, cmake, etc)
+      - name: Cache Android SDK
+        uses: actions/cache@v3
+        with:
+          path: ~/.android-sdk
+          key: android-sdk-${{ runner.os }}-v1
+          restore-keys: android-sdk-${{ runner.os }}-      
+
+      # Set ANDROID_SDK_ROOT to the cached location
+      - name: Setup Android SDK root
+        run: echo "ANDROID_SDK_ROOT=$HOME/.android-sdk" >> $GITHUB_ENV
+      
+            # Install Android SDK Command-line Tools if missing
+      - name: Install Android SDK Command-line Tools
+        if: steps.cache-android-sdk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p $HOME/.android-sdk/cmdline-tools
+          curl -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip cmdline-tools.zip -d $HOME/.android-sdk/cmdline-tools
+          mv $HOME/.android-sdk/cmdline-tools/cmdline-tools $HOME/.android-sdk/cmdline-tools/latest
+          rm cmdline-tools.zip
+
+      # Add sdkmanager to PATH
+      - name: Add sdkmanager to PATH
+        if: steps.cache-android-sdk.outputs.cache-hit != 'true'
+        run: echo "$HOME/.android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+
+      # (Optional) Install SDK components if missing (runs only if cache miss)
+      - name: Install SDK components
+        run: |
+          sdkmanager --licenses --sdk_root=$HOME/.android-sdk
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;27.0.12077973" "cmake;3.22.1" --sdk_root=$HOME/.android-sdk
+        if: steps.cache-android-sdk.outputs.cache-hit != 'true'
+
+
+      - name: 'Set Flutter 3.10.6'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+
+      - name: Cache Flutter and Gradle dependencies (excluding Jitsi SDK)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/.gradle
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Remove Jitsi SDK from pub cache
+        run: rm -rf ~/.pub-cache/git/jitsi_meet_flutter_sdk*
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi || true
+
+      - name: Show missing_rules.txt if exists
+        if: failure()
+        run: |
+          if [ -f /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/ ]; then
+            echo "---- missing_rules.txt ----"
+            cat /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/
+          else
+            echo "missing_rules.txt not found"
+          fi
+
+      - name: Upload missing_rules.txt artifact if exists
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: missing-r8-rules
+          path: build/app/outputs/mapping/release/missing_rules.txt
+
+      - name: List built APKs
+        # if: always()
+        run: ls -lh /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        # if: always()
+        with:
+          name: split-apks
+          path: |
+            /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/*.apk
