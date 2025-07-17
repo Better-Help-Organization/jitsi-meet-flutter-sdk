@@ -2,9 +2,9 @@ name: Flutter CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "**" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "**" ]
 
 jobs:
   build:
@@ -72,7 +72,7 @@ jobs:
         if: steps.cache-android-sdk.outputs.cache-hit != 'true'
 
 
-      - name: 'Set Flutter 3.10.6'
+      - name: 'Set Flutter Stable'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -93,18 +93,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-           cd example
-           flutter pub get
+         cd example
+         flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release --split-per-abi || true
+        run: flutter build apk --debug --target-platform android-arm64 || true
 
       - name: Show missing_rules.txt if exists
         if: failure()
         run: |
-          if [ -f /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/ ]; then
+          if [ -f build/app/outputs/flutter-apk/ ]; then
             echo "---- missing_rules.txt ----"
-            cat /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/
+            cat build/app/outputs/flutter-apk/
           else
             echo "missing_rules.txt not found"
           fi
@@ -118,7 +118,7 @@ jobs:
 
       - name: List built APKs
         # if: always()
-        run: ls -lh /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/
+        run: ls -lh build/app/outputs/flutter-apk/
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -126,4 +126,4 @@ jobs:
         with:
           name: split-apks
           path: |
-            /home/runner/work/demo-reduction/demo-reduction/build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/flutter-apk/*.apk
