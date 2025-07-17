@@ -97,6 +97,7 @@ jobs:
          flutter pub get
 
       - name: Build APK
+        working-directory: example
         run: flutter build apk --debug --target-platform android-arm64 || true
 
       - name: Show missing_rules.txt if exists
